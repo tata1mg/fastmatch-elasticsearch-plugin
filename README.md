@@ -1,0 +1,1 @@
+# fastmatch-elasticsearch-plugin
