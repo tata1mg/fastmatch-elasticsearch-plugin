@@ -1,0 +1,55 @@
+/*
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0 and the Server Side Public License, v 1; you may not use this file except
+ * in compliance with, at your election, the Elastic License 2.0 or the Server
+ * Side Public License, v 1.
+ */
+
+buildscript {
+    ext {
+        es_version = version.replaceAll(/\.[0-9]+$/, "")
+    }
+    repositories {
+        maven {
+            url = 'https://snapshots.elastic.co/maven/'
+        }
+        mavenCentral()
+    }
+    dependencies {
+        classpath "org.elasticsearch.gradle:build-tools:${es_version}"
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'elasticsearch.esplugin'
+apply plugin: 'elasticsearch.yaml-rest-test'
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:unchecked,deprecation"
+}
+
+// This plugin only has yaml rest tests
+test.enabled = false
+
+esplugin {
+    name pluginName
+    description pluginDescription
+    classname pluginClassname
+    licenseFile rootProject.file("LICENSE.txt")
+    noticeFile rootProject.file("NOTICE.txt")
+
+}
+
+allprojects {
+    repositories {
+      mavenCentral()
+    }
+}
+
+dependencies {
+    implementation 'org.roaringbitmap:RoaringBitmap:0.9.35'
+
+    yamlRestTestImplementation "org.apache.logging.log4j:log4j-core:2.17.0"
+    yamlRestTestImplementation "org.elasticsearch.test:framework:$es_version"
+}
