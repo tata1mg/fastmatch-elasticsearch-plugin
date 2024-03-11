@@ -165,11 +165,26 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 				}
 
 				return new FilterScript(params, lookup, docReader) {
+				    int currentDocid = -1;
+					@Override
+					public void setDocument(int docid) {
+						/*
+						 * advance has undefined behavior calling with
+						 * a docid <= its current docid
+						 */
+						try {
+							docValues.advance(docid);
+						} catch (IOException e) {
+							throw ExceptionsHelper.convertToElastic(e);
+						}
+						currentDocid = docid;
+					}
+
 					@Override
 					public boolean execute() {
-						final String docVal;
+						final String docValStr;
 						try {
-							docValStr = docValues.nextValue();
+							docValStr = docValues.binaryValue().toString();
 						} catch (IOException e) {
 							throw ExceptionsHelper.convertToElastic(e);
 						}
@@ -182,10 +197,10 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
                         catch (IOException e) {
                             // Do something here
                         }
-						if (exclude && rDocValBitmap.intersect(rBitmap)) {
+						if (exclude && rDocValBitmap.contains(rBitmap)) {
 							return false;
 						}
-						else return !include || rDocValBitmap.intersect(rBitmap);
+						else return !include || rDocValBitmap.contains(rBitmap);
 					}
 				};
 			}
