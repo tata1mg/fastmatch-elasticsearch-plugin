@@ -20,7 +20,7 @@
 
 package org.elasticsearch.tata1mg.fastmatcher;
 
-import org.apache.lucene.index.SortedNumericDocValues;
+import org.apache.lucene.index.SortedDocValues;
 import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.plugins.Plugin;
@@ -149,8 +149,7 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 			public FilterScript newInstance(DocReader docReader)
 					throws IOException {
 				DocValuesDocReader dvReader = ((DocValuesDocReader) docReader);
-				SortedNumericDocValues docValues = dvReader.getLeafReaderContext()
-						.reader().getSortedNumericDocValues(fieldName);
+				SortedDocValues docValues = dvReader.getLeafReaderContext().reader().getSortedDocValues(fieldName);
 
 				if (docValues == null) {
 					/*
@@ -166,34 +165,27 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 				}
 
 				return new FilterScript(params, lookup, docReader) {
-					int currentDocid = -1;
-					@Override
-					public void setDocument(int docid) {
-						/*
-						 * advance has undefined behavior calling with
-						 * a docid <= its current docid
-						 */
-						try {
-							docValues.advance(docid);
-						} catch (IOException e) {
-							throw ExceptionsHelper.convertToElastic(e);
-						}
-						currentDocid = docid;
-					}
-
 					@Override
 					public boolean execute() {
-						final int docVal;
+						final String docVal;
 						try {
-							docVal = Math.toIntExact(docValues.nextValue());
+							docValStr = docValues.nextValue();
 						} catch (IOException e) {
 							throw ExceptionsHelper.convertToElastic(e);
 						}
-
-						if (exclude && rBitmap.contains(docVal)) {
+                        final byte[] decodedDocVal = Base64.getDecoder().decode(docValStr.toString());
+        				final ByteBuffer buffer = ByteBuffer.wrap(decodedDocVal);
+				        RoaringBitmap rDocValBitmap = new RoaringBitmap();
+                        try {
+                            rDocValBitmap.deserialize(buffer);
+                        }
+                        catch (IOException e) {
+                            // Do something here
+                        }
+						if (exclude && rDocValBitmap.intersect(rBitmap)) {
 							return false;
 						}
-						else return !include || rBitmap.contains(docVal);
+						else return !include || rDocValBitmap.intersect(rBitmap);
 					}
 				};
 			}
