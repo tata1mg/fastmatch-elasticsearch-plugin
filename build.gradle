@@ -49,7 +49,6 @@ allprojects {
 
 dependencies {
     implementation 'org.roaringbitmap:RoaringBitmap:0.9.35'
-
     yamlRestTestImplementation "org.apache.logging.log4j:log4j-core:2.17.0"
     yamlRestTestImplementation "org.elasticsearch.test:framework:$es_version"
 }

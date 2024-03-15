@@ -20,7 +20,8 @@
 
 package org.elasticsearch.tata1mg.fastmatcher;
 
-import org.apache.lucene.index.SortedDocValues;
+import org.apache.lucene.index.SortedSetDocValues;
+import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.plugins.Plugin;
@@ -70,7 +71,6 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 						+ " scripts cannot be used for context ["
 						+ context.name + "]");
 			}
-			// we use the script "source" as the script identifier
 			// in this case, we use the name fast_matcher
 			if ("fast_matcher".equals(scriptSource)) {
 				FilterScript.Factory factory = new FastMatcherFactory();
@@ -149,9 +149,9 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 			public FilterScript newInstance(DocReader docReader)
 					throws IOException {
 				DocValuesDocReader dvReader = ((DocValuesDocReader) docReader);
-				SortedDocValues docValues = dvReader.getLeafReaderContext().reader().getSortedDocValues(fieldName);
+				SortedSetDocValues sortedSetDocValues = dvReader.getLeafReaderContext().reader().getSortedSetDocValues(fieldName);
 
-				if (docValues == null) {
+				if (sortedSetDocValues == null) {
 					/*
 					 * the field and/or docValues doesn't exist in this segment
 					 */
@@ -172,23 +172,28 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 						 * advance has undefined behavior calling with
 						 * a docid <= its current docid
 						 */
+						if (sortedSetDocValues.docID() < docid) {
 						try {
-							docValues.advance(docid);
+							sortedSetDocValues.advance(docid);
 						} catch (IOException e) {
 							throw ExceptionsHelper.convertToElastic(e);
+						}
 						}
 						currentDocid = docid;
 					}
 
 					@Override
 					public boolean execute() {
-						final String docValStr;
+						final BytesRef docVal;
 						try {
-							docValStr = docValues.binaryValue().toString();
+							docVal = sortedSetDocValues.lookupOrd(sortedSetDocValues.nextOrd());
 						} catch (IOException e) {
 							throw ExceptionsHelper.convertToElastic(e);
 						}
-                        final byte[] decodedDocVal = Base64.getDecoder().decode(docValStr.toString());
+						if (docVal == null) {
+							return !include;
+						}
+                        final byte[] decodedDocVal = Base64.getDecoder().decode(docVal.bytes);
         				final ByteBuffer buffer = ByteBuffer.wrap(decodedDocVal);
 				        RoaringBitmap rDocValBitmap = new RoaringBitmap();
                         try {
@@ -197,10 +202,12 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
                         catch (IOException e) {
                             // Do something here
                         }
-						if (exclude && rDocValBitmap.contains(rBitmap)) {
-							return false;
+						if (include) {
+							return rDocValBitmap.contains(rBitmap);
 						}
-						else return !include || rDocValBitmap.contains(rBitmap);
+						else {
+							return !rDocValBitmap.contains(rBitmap);
+						}
 					}
 				};
 			}
