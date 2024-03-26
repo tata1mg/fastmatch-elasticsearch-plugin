@@ -203,10 +203,10 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
                             // Do something here
                         }
 						if (include) {
-							return rDocValBitmap.contains(rBitmap);
+							return RoaringBitmap.intersects(rDocValBitmap, rBitmap);
 						}
 						else {
-							return !rDocValBitmap.contains(rBitmap);
+							return !RoaringBitmap.intersects(rDocValBitmap, rBitmap);
 						}
 					}
 				};
