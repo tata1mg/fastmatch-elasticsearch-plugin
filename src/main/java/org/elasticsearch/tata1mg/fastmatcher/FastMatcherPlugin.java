@@ -20,7 +20,7 @@
 
 package org.elasticsearch.tata1mg.fastmatcher;
 
-import org.apache.lucene.index.SortedSetDocValues;
+import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.common.settings.Settings;
@@ -149,9 +149,9 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 			public FilterScript newInstance(DocReader docReader)
 					throws IOException {
 				DocValuesDocReader dvReader = ((DocValuesDocReader) docReader);
-				SortedSetDocValues sortedSetDocValues = dvReader.getLeafReaderContext().reader().getSortedSetDocValues(fieldName);
+				BinaryDocValues binaryDocValues = dvReader.getLeafReaderContext().reader().getBinaryDocValues(fieldName);
 
-				if (sortedSetDocValues == null) {
+				if (binaryDocValues == null) {
 					/*
 					 * the field and/or docValues doesn't exist in this segment
 					 */
@@ -172,9 +172,9 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 						 * advance has undefined behavior calling with
 						 * a docid <= its current docid
 						 */
-						if (sortedSetDocValues.docID() < docid) {
+						if (binaryDocValues.docID() < docid) {
 						try {
-							sortedSetDocValues.advance(docid);
+							binaryDocValues.advance(docid);
 						} catch (IOException e) {
 							throw ExceptionsHelper.convertToElastic(e);
 						}
@@ -182,26 +182,35 @@ public class FastMatcherPlugin extends Plugin implements ScriptPlugin {
 						currentDocid = docid;
 					}
 
+                                        public int getByteSize(long x) {
+                                            if (x < 0) throw new IllegalArgumentException();
+                                            int s = 1;
+                                            while (s < 8 && x >= (1L << (s * 8))) s++;
+                                            return s;
+                                        }
+
 					@Override
 					public boolean execute() {
 						final BytesRef docVal;
 						try {
-							docVal = sortedSetDocValues.lookupOrd(sortedSetDocValues.nextOrd());
+							docVal = binaryDocValues.binaryValue();
 						} catch (IOException e) {
 							throw ExceptionsHelper.convertToElastic(e);
 						}
 						if (docVal == null) {
 							return !include;
 						}
-                        final byte[] decodedDocVal = Base64.getDecoder().decode(docVal.bytes);
-        				final ByteBuffer buffer = ByteBuffer.wrap(decodedDocVal);
+                                        int bytesNeededForLength = getByteSize(docVal.length);
+                                        int extraPrefixBytes = bytesNeededForLength + 1;
+        				final ByteBuffer buffer = ByteBuffer.wrap(docVal.bytes, docVal.offset + extraPrefixBytes, docVal.length - extraPrefixBytes);
 				        RoaringBitmap rDocValBitmap = new RoaringBitmap();
                         try {
                             rDocValBitmap.deserialize(buffer);
                         }
                         catch (IOException e) {
-                            // Do something here
+                            throw ExceptionsHelper.convertToElastic(e);
                         }
+
 						if (include) {
 							return RoaringBitmap.intersects(rDocValBitmap, rBitmap);
 						}
